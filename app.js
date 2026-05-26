@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'jan-barcode-codes';
-const APIKEY_STORAGE = 'jan-barcode-apikey';
+const WORKER_URL_STORAGE = 'jan-barcode-worker-url';
 let codes = [];
 let currentDetailIndex = 0;
 
@@ -9,7 +9,7 @@ function init() {
   loadCodes();
   renderList();
   bindEvents();
-  checkApiKey();
+  checkWorkerUrl();
 }
 
 function bindEvents() {
@@ -41,15 +41,15 @@ function bindEvents() {
 
   // Settings
   document.getElementById('settings-btn').addEventListener('click', () => showView('settings-view'));
-  document.getElementById('save-apikey-btn').addEventListener('click', saveApiKey);
+  document.getElementById('save-worker-btn').addEventListener('click', saveWorkerUrl);
 }
 
-// --- API Key Management ---
+// --- Worker URL Management ---
 
-function checkApiKey() {
-  const key = localStorage.getItem(APIKEY_STORAGE);
+function checkWorkerUrl() {
+  const url = localStorage.getItem(WORKER_URL_STORAGE);
   const indicator = document.getElementById('api-status');
-  if (key) {
+  if (url) {
     indicator.textContent = 'API設定済み';
     indicator.className = 'api-indicator ok';
   } else {
@@ -58,21 +58,23 @@ function checkApiKey() {
   }
 }
 
-function saveApiKey() {
-  const input = document.getElementById('apikey-input');
-  const key = input.value.trim();
-  if (key) {
-    localStorage.setItem(APIKEY_STORAGE, key);
-    showToast('APIキーを保存しました');
+function saveWorkerUrl() {
+  const input = document.getElementById('worker-url-input');
+  let url = input.value.trim();
+  if (url) {
+    // URLの末尾スラッシュを除去
+    url = url.replace(/\/+$/, '');
+    localStorage.setItem(WORKER_URL_STORAGE, url);
+    showToast('Worker URLを保存しました');
     showView('home-view');
-    checkApiKey();
+    checkWorkerUrl();
   } else {
-    showToast('APIキーを入力してください');
+    showToast('Worker URLを入力してください');
   }
 }
 
-function getApiKey() {
-  return localStorage.getItem(APIKEY_STORAGE);
+function getWorkerUrl() {
+  return localStorage.getItem(WORKER_URL_STORAGE);
 }
 
 // --- View Management ---
@@ -85,9 +87,9 @@ function showView(viewId) {
     renderList();
   }
   if (viewId === 'settings-view') {
-    const key = getApiKey();
-    const input = document.getElementById('apikey-input');
-    if (key) input.value = key;
+    const url = getWorkerUrl();
+    const input = document.getElementById('worker-url-input');
+    if (url) input.value = url;
   }
 }
 
@@ -346,41 +348,36 @@ function fileToBase64(file) {
 }
 
 async function callVisionAPI(base64Image) {
-  const apiKey = getApiKey();
-  if (!apiKey) throw new Error('APIキーが設定されていません');
+  const workerUrl = getWorkerUrl();
+  if (!workerUrl) throw new Error('Worker URLが設定されていません');
 
-  const response = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`, {
+  const response = await fetch(workerUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      requests: [{
-        image: { content: base64Image },
-        features: [{ type: 'TEXT_DETECTION' }]
-      }]
-    })
+    body: JSON.stringify({ image: base64Image })
   });
 
   if (!response.ok) {
-    const err = await response.json();
-    throw new Error(err.error?.message || `API error: ${response.status}`);
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || `API error: ${response.status}`);
   }
 
   const data = await response.json();
 
-  if (data.responses[0]?.error) {
+  if (data.responses && data.responses[0]?.error) {
     throw new Error(data.responses[0].error.message);
   }
 
-  return data.responses[0]?.fullTextAnnotation?.text || '';
+  return data.responses?.[0]?.fullTextAnnotation?.text || '';
 }
 
 async function handleCameraInput(e) {
   const file = e.target.files[0];
   if (!file) return;
 
-  // Check API key
-  if (!getApiKey()) {
-    showToast('先にAPIキーを設定してください');
+  // Check Worker URL
+  if (!getWorkerUrl()) {
+    showToast('先にWorker URLを設定してください');
     showView('settings-view');
     e.target.value = '';
     return;

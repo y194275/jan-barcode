@@ -135,21 +135,10 @@
 
     <div class="settings-content">
       <div class="settings-section">
-        <h3>Google Cloud Vision APIキー</h3>
-        <p class="settings-desc">カメラ読取に必要です。キーはこの端末にのみ保存されます。</p>
-        <input type="text" id="apikey-input" placeholder="AIzaSy..." class="apikey-input">
-        <button id="save-apikey-btn" class="btn-primary" style="width:100%;margin-top:8px;">保存</button>
-      </div>
-
-      <div class="settings-section">
-        <h3>APIキーの取得方法</h3>
-        <ol class="settings-steps">
-          <li>Google Cloud Console を開く</li>
-          <li>プロジェクトを作成</li>
-          <li>Cloud Vision API を有効化</li>
-          <li>認証情報 → APIキーを作成</li>
-        </ol>
-        <p class="settings-desc">月1000回まで無料で使えます。</p>
+        <h3>Worker URL</h3>
+        <p class="settings-desc">OCR用中継サーバーのURLです。この端末にのみ保存されます。</p>
+        <input type="url" id="worker-url-input" placeholder="https://xxxxxxxx.workers.dev" class="apikey-input">
+        <button id="save-worker-btn" class="btn-primary" style="width:100%;margin-top:8px;">保存</button>
       </div>
     </div>
   </div>
