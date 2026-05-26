@@ -82,18 +82,35 @@ function validateEAN13(code) {
 }
 
 function extractJANCodes(text) {
-  const matches = text.match(/\d{13}/g) || [];
-  const seen = new Set();
-  const results = [];
-  for (const m of matches) {
-    if (!seen.has(m)) {
-      seen.add(m);
-      results.push({
-        code: m,
-        valid: validateEAN13(m)
-      });
+  // Extract all 13+ digit sequences, then take first 13 digits
+  const rawMatches = text.match(/\d{13,}/g) || [];
+  const countMap = new Map();
+
+  for (const raw of rawMatches) {
+    // Try all 13-digit windows within longer sequences
+    for (let i = 0; i <= raw.length - 13; i++) {
+      const code = raw.substring(i, i + 13);
+      // Only count codes starting with 45 or 49 (Japanese JAN) or other valid prefixes
+      countMap.set(code, (countMap.get(code) || 0) + 1);
     }
   }
+
+  // Sort by detection count (higher = more reliable)
+  const results = [];
+  for (const [code, count] of countMap.entries()) {
+    results.push({
+      code,
+      valid: validateEAN13(code),
+      count
+    });
+  }
+
+  // Valid codes first, then by count
+  results.sort((a, b) => {
+    if (a.valid !== b.valid) return b.valid - a.valid;
+    return b.count - a.count;
+  });
+
   return results;
 }
 
@@ -323,13 +340,132 @@ async function loadTesseract() {
   });
 }
 
+// --- Image Preprocessing ---
+
+function preprocessImage(imageFile) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      // Scale up small images (2x for better OCR)
+      const scale = Math.max(1, Math.min(3, 2000 / Math.max(img.width, img.height)));
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+
+      // Draw scaled image
+      ctx.drawImage(img, 0, 0, w, h);
+
+      // Get pixel data
+      const imageData = ctx.getImageData(0, 0, w, h);
+      const data = imageData.data;
+
+      // Step 1: Grayscale
+      for (let i = 0; i < data.length; i += 4) {
+        const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+        data[i] = data[i + 1] = data[i + 2] = gray;
+      }
+
+      // Step 2: Contrast enhancement (stretch histogram)
+      let min = 255, max = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i] < min) min = data[i];
+        if (data[i] > max) max = data[i];
+      }
+      const range = max - min || 1;
+      for (let i = 0; i < data.length; i += 4) {
+        const v = Math.round(((data[i] - min) / range) * 255);
+        data[i] = data[i + 1] = data[i + 2] = v;
+      }
+
+      // Step 3: Adaptive binarization (local threshold)
+      const binaryData = new Uint8ClampedArray(data);
+      const blockSize = Math.max(15, Math.round(w / 40) | 1);
+      const halfBlock = Math.floor(blockSize / 2);
+
+      // Use integral image for fast local mean calculation
+      const integral = new Float64Array((w + 1) * (h + 1));
+      for (let y = 0; y < h; y++) {
+        let rowSum = 0;
+        for (let x = 0; x < w; x++) {
+          rowSum += data[(y * w + x) * 4];
+          integral[(y + 1) * (w + 1) + (x + 1)] = rowSum + integral[y * (w + 1) + (x + 1)];
+        }
+      }
+
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const x1 = Math.max(0, x - halfBlock);
+          const y1 = Math.max(0, y - halfBlock);
+          const x2 = Math.min(w - 1, x + halfBlock);
+          const y2 = Math.min(h - 1, y + halfBlock);
+          const count = (x2 - x1 + 1) * (y2 - y1 + 1);
+          const sum = integral[(y2 + 1) * (w + 1) + (x2 + 1)]
+                    - integral[y1 * (w + 1) + (x2 + 1)]
+                    - integral[(y2 + 1) * (w + 1) + x1]
+                    + integral[y1 * (w + 1) + x1];
+          const mean = sum / count;
+          const idx = (y * w + x) * 4;
+          const v = data[idx] < (mean - 10) ? 0 : 255;
+          binaryData[idx] = binaryData[idx + 1] = binaryData[idx + 2] = v;
+        }
+      }
+
+      // Write binary result
+      const outData = ctx.createImageData(w, h);
+      outData.data.set(binaryData);
+      ctx.putImageData(outData, 0, 0);
+
+      canvas.toBlob(resolve, 'image/png');
+    };
+    img.src = URL.createObjectURL(imageFile);
+  });
+}
+
+// Also create a rotated (90 degree) version for vertical text
+function rotateImage(imageFile, degrees) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      if (degrees === 90 || degrees === 270) {
+        canvas.width = img.height;
+        canvas.height = img.width;
+      } else {
+        canvas.width = img.width;
+        canvas.height = img.height;
+      }
+      const ctx = canvas.getContext('2d');
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate((degrees * Math.PI) / 180);
+      ctx.drawImage(img, -img.width / 2, -img.height / 2);
+      canvas.toBlob(resolve, 'image/png');
+    };
+    img.src = URL.createObjectURL(imageFile);
+  });
+}
+
 async function runOCR(imageFile) {
   const statusEl = document.getElementById('ocr-status');
   statusEl.innerHTML = `
     <div class="spinner"></div>
-    <p>OCRエンジン読み込み中...</p>
+    <p>画像を前処理中...</p>
     <div class="progress-bar"><div class="fill" id="ocr-progress"></div></div>
   `;
+
+  // Preprocess the original image
+  const preprocessed = await preprocessImage(imageFile);
+
+  // Create rotated versions for vertical text
+  const rotated90 = await rotateImage(imageFile, 90);
+  const rotated270 = await rotateImage(imageFile, 270);
+  const preprocessed90 = await preprocessImage(rotated90);
+  const preprocessed270 = await preprocessImage(rotated270);
+
+  statusEl.querySelector('p').textContent = 'OCRエンジン読み込み中...';
 
   const worker = await Tesseract.createWorker('eng', 1, {
     logger: (m) => {
@@ -344,15 +480,39 @@ async function runOCR(imageFile) {
     }
   });
 
-  await worker.setParameters({
-    tessedit_char_whitelist: '0123456789',
-    tessedit_pageseg_mode: Tesseract.PSM.AUTO,
-  });
+  // Try multiple configurations and combine results
+  const allText = [];
+  const psmModes = [
+    Tesseract.PSM.AUTO,
+    Tesseract.PSM.SINGLE_BLOCK,
+    Tesseract.PSM.SPARSE_TEXT,
+  ];
+  const images = [preprocessed, preprocessed90, preprocessed270];
+  const imageLabels = ['正方向', '90度回転', '270度回転'];
+  const total = psmModes.length * images.length;
+  let done = 0;
 
-  const { data: { text } } = await worker.recognize(imageFile);
+  for (const image of images) {
+    for (const psm of psmModes) {
+      try {
+        await worker.setParameters({
+          tessedit_char_whitelist: '0123456789',
+          tessedit_pageseg_mode: psm,
+        });
+        const { data: { text } } = await worker.recognize(image);
+        allText.push(text);
+      } catch {}
+      done++;
+      statusEl.querySelector('p').textContent = `解析中... (${done}/${total})`;
+      const progressEl = document.getElementById('ocr-progress');
+      if (progressEl) progressEl.style.width = Math.round((done / total) * 100) + '%';
+    }
+  }
+
   await worker.terminate();
 
-  return text;
+  // Combine all results
+  return allText.join('\n');
 }
 
 function renderOcrResults(janCodes) {
@@ -362,6 +522,7 @@ function renderOcrResults(janCodes) {
     <div class="ocr-code-item ${item.valid ? 'selected' : ''}" data-code="${item.code}">
       <input type="checkbox" ${item.valid ? 'checked' : ''} id="ocr-check-${i}">
       <label class="code-text" for="ocr-check-${i}">${item.code}</label>
+      <span class="detect-count">${item.count}回検出</span>
       <span class="validity ${item.valid ? 'valid' : 'invalid'}">
         ${item.valid ? 'OK' : 'CD不正'}
       </span>

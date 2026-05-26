@@ -391,8 +391,13 @@ header h2 {
   letter-spacing: 1px;
 }
 
-.ocr-code-item .validity {
+.ocr-code-item .detect-count {
   margin-left: auto;
+  font-size: 11px;
+  color: #888;
+}
+
+.ocr-code-item .validity {
   font-size: 12px;
   padding: 2px 8px;
   border-radius: 4px;
