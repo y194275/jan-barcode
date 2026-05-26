@@ -1,8 +1,7 @@
 const STORAGE_KEY = 'jan-barcode-codes';
+const APIKEY_STORAGE = 'jan-barcode-apikey';
 let codes = [];
 let currentDetailIndex = 0;
-let tesseractLoaded = false;
-let tesseractWorker = null;
 
 document.addEventListener('DOMContentLoaded', init);
 
@@ -10,6 +9,7 @@ function init() {
   loadCodes();
   renderList();
   bindEvents();
+  checkApiKey();
 }
 
 function bindEvents() {
@@ -38,6 +38,41 @@ function bindEvents() {
   document.querySelectorAll('.back-btn').forEach(btn => {
     btn.addEventListener('click', () => showView(btn.dataset.target));
   });
+
+  // Settings
+  document.getElementById('settings-btn').addEventListener('click', () => showView('settings-view'));
+  document.getElementById('save-apikey-btn').addEventListener('click', saveApiKey);
+}
+
+// --- API Key Management ---
+
+function checkApiKey() {
+  const key = localStorage.getItem(APIKEY_STORAGE);
+  const indicator = document.getElementById('api-status');
+  if (key) {
+    indicator.textContent = 'API設定済み';
+    indicator.className = 'api-indicator ok';
+  } else {
+    indicator.textContent = 'API未設定';
+    indicator.className = 'api-indicator ng';
+  }
+}
+
+function saveApiKey() {
+  const input = document.getElementById('apikey-input');
+  const key = input.value.trim();
+  if (key) {
+    localStorage.setItem(APIKEY_STORAGE, key);
+    showToast('APIキーを保存しました');
+    showView('home-view');
+    checkApiKey();
+  } else {
+    showToast('APIキーを入力してください');
+  }
+}
+
+function getApiKey() {
+  return localStorage.getItem(APIKEY_STORAGE);
 }
 
 // --- View Management ---
@@ -48,6 +83,11 @@ function showView(viewId) {
 
   if (viewId === 'home-view') {
     renderList();
+  }
+  if (viewId === 'settings-view') {
+    const key = getApiKey();
+    const input = document.getElementById('apikey-input');
+    if (key) input.value = key;
   }
 }
 
@@ -82,20 +122,27 @@ function validateEAN13(code) {
 }
 
 function extractJANCodes(text) {
-  // Extract all 13+ digit sequences, then take first 13 digits
+  // Find all digit sequences of 13+
   const rawMatches = text.match(/\d{13,}/g) || [];
   const countMap = new Map();
 
   for (const raw of rawMatches) {
-    // Try all 13-digit windows within longer sequences
     for (let i = 0; i <= raw.length - 13; i++) {
       const code = raw.substring(i, i + 13);
-      // Only count codes starting with 45 or 49 (Japanese JAN) or other valid prefixes
       countMap.set(code, (countMap.get(code) || 0) + 1);
     }
   }
 
-  // Sort by detection count (higher = more reliable)
+  // Also try extracting from spaced/broken numbers (e.g. "497 4305 218933")
+  const cleaned = text.replace(/[^\d\n]/g, '');
+  const lineMatches = cleaned.match(/\d{13,}/g) || [];
+  for (const raw of lineMatches) {
+    for (let i = 0; i <= raw.length - 13; i++) {
+      const code = raw.substring(i, i + 13);
+      countMap.set(code, (countMap.get(code) || 0) + 1);
+    }
+  }
+
   const results = [];
   for (const [code, count] of countMap.entries()) {
     results.push({
@@ -284,24 +331,80 @@ function navigateDetail(direction) {
   }
 }
 
-// --- OCR ---
+// --- OCR with Google Cloud Vision API ---
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function callVisionAPI(base64Image) {
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error('APIキーが設定されていません');
+
+  const response = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      requests: [{
+        image: { content: base64Image },
+        features: [{ type: 'TEXT_DETECTION' }]
+      }]
+    })
+  });
+
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(err.error?.message || `API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+
+  if (data.responses[0]?.error) {
+    throw new Error(data.responses[0].error.message);
+  }
+
+  return data.responses[0]?.fullTextAnnotation?.text || '';
+}
 
 async function handleCameraInput(e) {
   const file = e.target.files[0];
   if (!file) return;
 
+  // Check API key
+  if (!getApiKey()) {
+    showToast('先にAPIキーを設定してください');
+    showView('settings-view');
+    e.target.value = '';
+    return;
+  }
+
   showView('ocr-view');
   document.getElementById('ocr-status').classList.remove('hidden');
   document.getElementById('ocr-results').classList.add('hidden');
   document.getElementById('ocr-no-results').classList.add('hidden');
+  document.getElementById('ocr-error').classList.add('hidden');
 
   const imgUrl = URL.createObjectURL(file);
   document.getElementById('ocr-image').src = imgUrl;
 
+  const statusEl = document.getElementById('ocr-status');
+  statusEl.innerHTML = `
+    <div class="spinner"></div>
+    <p>Google Cloud Visionで解析中...</p>
+  `;
+
   try {
-    await loadTesseract();
-    const result = await runOCR(file);
-    const janCodes = extractJANCodes(result);
+    const base64 = await fileToBase64(file);
+    const text = await callVisionAPI(base64);
+    const janCodes = extractJANCodes(text);
 
     document.getElementById('ocr-status').classList.add('hidden');
 
@@ -313,206 +416,13 @@ async function handleCameraInput(e) {
     }
   } catch (err) {
     document.getElementById('ocr-status').classList.add('hidden');
-    document.getElementById('ocr-no-results').classList.remove('hidden');
-    console.error('OCR error:', err);
+    const errEl = document.getElementById('ocr-error');
+    errEl.classList.remove('hidden');
+    errEl.querySelector('.error-message').textContent = err.message;
+    console.error('Vision API error:', err);
   }
 
   e.target.value = '';
-}
-
-async function loadTesseract() {
-  if (tesseractLoaded) return;
-
-  await new Promise((resolve, reject) => {
-    if (window.Tesseract) {
-      tesseractLoaded = true;
-      resolve();
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
-    script.onload = () => {
-      tesseractLoaded = true;
-      resolve();
-    };
-    script.onerror = reject;
-    document.head.appendChild(script);
-  });
-}
-
-// --- Image Preprocessing ---
-
-function preprocessImage(imageFile) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      // Scale up small images (2x for better OCR)
-      const scale = Math.max(1, Math.min(3, 2000 / Math.max(img.width, img.height)));
-      const w = Math.round(img.width * scale);
-      const h = Math.round(img.height * scale);
-
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d');
-
-      // Draw scaled image
-      ctx.drawImage(img, 0, 0, w, h);
-
-      // Get pixel data
-      const imageData = ctx.getImageData(0, 0, w, h);
-      const data = imageData.data;
-
-      // Step 1: Grayscale
-      for (let i = 0; i < data.length; i += 4) {
-        const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-        data[i] = data[i + 1] = data[i + 2] = gray;
-      }
-
-      // Step 2: Contrast enhancement (stretch histogram)
-      let min = 255, max = 0;
-      for (let i = 0; i < data.length; i += 4) {
-        if (data[i] < min) min = data[i];
-        if (data[i] > max) max = data[i];
-      }
-      const range = max - min || 1;
-      for (let i = 0; i < data.length; i += 4) {
-        const v = Math.round(((data[i] - min) / range) * 255);
-        data[i] = data[i + 1] = data[i + 2] = v;
-      }
-
-      // Step 3: Adaptive binarization (local threshold)
-      const binaryData = new Uint8ClampedArray(data);
-      const blockSize = Math.max(15, Math.round(w / 40) | 1);
-      const halfBlock = Math.floor(blockSize / 2);
-
-      // Use integral image for fast local mean calculation
-      const integral = new Float64Array((w + 1) * (h + 1));
-      for (let y = 0; y < h; y++) {
-        let rowSum = 0;
-        for (let x = 0; x < w; x++) {
-          rowSum += data[(y * w + x) * 4];
-          integral[(y + 1) * (w + 1) + (x + 1)] = rowSum + integral[y * (w + 1) + (x + 1)];
-        }
-      }
-
-      for (let y = 0; y < h; y++) {
-        for (let x = 0; x < w; x++) {
-          const x1 = Math.max(0, x - halfBlock);
-          const y1 = Math.max(0, y - halfBlock);
-          const x2 = Math.min(w - 1, x + halfBlock);
-          const y2 = Math.min(h - 1, y + halfBlock);
-          const count = (x2 - x1 + 1) * (y2 - y1 + 1);
-          const sum = integral[(y2 + 1) * (w + 1) + (x2 + 1)]
-                    - integral[y1 * (w + 1) + (x2 + 1)]
-                    - integral[(y2 + 1) * (w + 1) + x1]
-                    + integral[y1 * (w + 1) + x1];
-          const mean = sum / count;
-          const idx = (y * w + x) * 4;
-          const v = data[idx] < (mean - 10) ? 0 : 255;
-          binaryData[idx] = binaryData[idx + 1] = binaryData[idx + 2] = v;
-        }
-      }
-
-      // Write binary result
-      const outData = ctx.createImageData(w, h);
-      outData.data.set(binaryData);
-      ctx.putImageData(outData, 0, 0);
-
-      canvas.toBlob(resolve, 'image/png');
-    };
-    img.src = URL.createObjectURL(imageFile);
-  });
-}
-
-// Also create a rotated (90 degree) version for vertical text
-function rotateImage(imageFile, degrees) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      if (degrees === 90 || degrees === 270) {
-        canvas.width = img.height;
-        canvas.height = img.width;
-      } else {
-        canvas.width = img.width;
-        canvas.height = img.height;
-      }
-      const ctx = canvas.getContext('2d');
-      ctx.translate(canvas.width / 2, canvas.height / 2);
-      ctx.rotate((degrees * Math.PI) / 180);
-      ctx.drawImage(img, -img.width / 2, -img.height / 2);
-      canvas.toBlob(resolve, 'image/png');
-    };
-    img.src = URL.createObjectURL(imageFile);
-  });
-}
-
-async function runOCR(imageFile) {
-  const statusEl = document.getElementById('ocr-status');
-  statusEl.innerHTML = `
-    <div class="spinner"></div>
-    <p>画像を前処理中...</p>
-    <div class="progress-bar"><div class="fill" id="ocr-progress"></div></div>
-  `;
-
-  // Preprocess the original image
-  const preprocessed = await preprocessImage(imageFile);
-
-  // Create rotated versions for vertical text
-  const rotated90 = await rotateImage(imageFile, 90);
-  const rotated270 = await rotateImage(imageFile, 270);
-  const preprocessed90 = await preprocessImage(rotated90);
-  const preprocessed270 = await preprocessImage(rotated270);
-
-  statusEl.querySelector('p').textContent = 'OCRエンジン読み込み中...';
-
-  const worker = await Tesseract.createWorker('eng', 1, {
-    logger: (m) => {
-      if (m.status === 'recognizing text') {
-        const pct = Math.round(m.progress * 100);
-        const progressEl = document.getElementById('ocr-progress');
-        if (progressEl) progressEl.style.width = pct + '%';
-        statusEl.querySelector('p').textContent = `テキスト認識中... ${pct}%`;
-      } else if (m.status === 'loading language traineddata') {
-        statusEl.querySelector('p').textContent = 'OCRデータ読み込み中...';
-      }
-    }
-  });
-
-  // Try multiple configurations and combine results
-  const allText = [];
-  const psmModes = [
-    Tesseract.PSM.AUTO,
-    Tesseract.PSM.SINGLE_BLOCK,
-    Tesseract.PSM.SPARSE_TEXT,
-  ];
-  const images = [preprocessed, preprocessed90, preprocessed270];
-  const imageLabels = ['正方向', '90度回転', '270度回転'];
-  const total = psmModes.length * images.length;
-  let done = 0;
-
-  for (const image of images) {
-    for (const psm of psmModes) {
-      try {
-        await worker.setParameters({
-          tessedit_char_whitelist: '0123456789',
-          tessedit_pageseg_mode: psm,
-        });
-        const { data: { text } } = await worker.recognize(image);
-        allText.push(text);
-      } catch {}
-      done++;
-      statusEl.querySelector('p').textContent = `解析中... (${done}/${total})`;
-      const progressEl = document.getElementById('ocr-progress');
-      if (progressEl) progressEl.style.width = Math.round((done / total) * 100) + '%';
-    }
-  }
-
-  await worker.terminate();
-
-  // Combine all results
-  return allText.join('\n');
 }
 
 function renderOcrResults(janCodes) {
@@ -522,7 +432,6 @@ function renderOcrResults(janCodes) {
     <div class="ocr-code-item ${item.valid ? 'selected' : ''}" data-code="${item.code}">
       <input type="checkbox" ${item.valid ? 'checked' : ''} id="ocr-check-${i}">
       <label class="code-text" for="ocr-check-${i}">${item.code}</label>
-      <span class="detect-count">${item.count}回検出</span>
       <span class="validity ${item.valid ? 'valid' : 'invalid'}">
         ${item.valid ? 'OK' : 'CD不正'}
       </span>

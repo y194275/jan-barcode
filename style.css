@@ -50,6 +50,41 @@ header {
 header h1 {
   font-size: 20px;
   font-weight: 700;
+  flex: 1;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.api-indicator {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.api-indicator.ok {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.api-indicator.ng {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.settings-btn {
+  background: none;
+  border: none;
+  color: var(--text-sub);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
 }
 
 header h2 {
@@ -534,6 +569,78 @@ header h2 {
   transform: translateX(-50%) translateY(0);
 }
 
+/* Settings View */
+.settings-content {
+  padding: 16px;
+}
+
+.settings-section {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.settings-section h3 {
+  font-size: 16px;
+  margin-bottom: 8px;
+}
+
+.settings-desc {
+  font-size: 13px;
+  color: var(--text-sub);
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+.apikey-input {
+  width: 100%;
+  padding: 12px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 14px;
+  font-family: 'SF Mono', 'Menlo', monospace;
+  outline: none;
+}
+
+.apikey-input:focus {
+  border-color: var(--primary);
+}
+
+.settings-steps {
+  padding-left: 20px;
+  font-size: 14px;
+  line-height: 2;
+  color: var(--text-sub);
+  margin-bottom: 12px;
+}
+
+/* OCR Error */
+#ocr-error {
+  text-align: center;
+  padding: 40px 20px;
+}
+
+#ocr-error .error-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--danger);
+  margin-bottom: 8px;
+}
+
+#ocr-error .error-message {
+  font-size: 13px;
+  color: var(--text-sub);
+  margin-bottom: 8px;
+  word-break: break-all;
+}
+
+#ocr-error .hint {
+  font-size: 13px;
+  color: #999;
+  margin-bottom: 16px;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #111;
@@ -544,7 +651,8 @@ header h2 {
   }
 
   .manual-input-row input,
-  #bulk-input-area textarea {
+  #bulk-input-area textarea,
+  .apikey-input {
     background: #2a2a2a;
     color: #f0f0f0;
   }

@@ -16,6 +16,14 @@
   <div id="home-view" class="view active">
     <header>
       <h1>JANバーコード変換</h1>
+      <div class="header-right">
+        <span id="api-status" class="api-indicator ng">API未設定</span>
+        <button id="settings-btn" class="settings-btn" title="設定">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+            <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/>
+          </svg>
+        </button>
+      </div>
     </header>
 
     <div class="input-section">
@@ -25,7 +33,7 @@
           <path d="M9 2 7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/>
         </svg>
         <span>カメラでJANコード読取</span>
-        <small>印刷された数字をOCRで認識</small>
+        <small>Google Cloud Visionで高精度認識</small>
         <input type="file" id="camera-input" accept="image/*" capture="environment">
       </label>
 
@@ -45,7 +53,6 @@
     </div>
 
     <div id="code-list" class="code-list">
-      <!-- バーコードリストがここに表示される -->
     </div>
 
     <div id="empty-state" class="empty-state">
@@ -70,7 +77,7 @@
 
     <div id="ocr-status" class="ocr-status">
       <div class="spinner"></div>
-      <p>画像を解析中...</p>
+      <p>Google Cloud Visionで解析中...</p>
     </div>
 
     <div id="ocr-results" class="ocr-results hidden">
@@ -86,6 +93,13 @@
       <p>JANコードが検出できませんでした</p>
       <p class="hint">用紙をまっすぐ撮影し、数字がはっきり見えるようにしてください</p>
       <button id="ocr-retry2" class="btn-secondary">再撮影</button>
+    </div>
+
+    <div id="ocr-error" class="hidden">
+      <p class="error-title">エラーが発生しました</p>
+      <p class="error-message"></p>
+      <p class="hint">APIキーが正しいか確認してください</p>
+      <button class="btn-secondary back-btn" data-target="settings-view">設定を確認</button>
     </div>
   </div>
 
@@ -109,6 +123,34 @@
 
     <div class="scan-hint">
       <p>画面をスキャナーに向けてください</p>
+    </div>
+  </div>
+
+  <!-- 設定画面 -->
+  <div id="settings-view" class="view">
+    <header>
+      <button class="back-btn" data-target="home-view">&larr; 戻る</button>
+      <h2>設定</h2>
+    </header>
+
+    <div class="settings-content">
+      <div class="settings-section">
+        <h3>Google Cloud Vision APIキー</h3>
+        <p class="settings-desc">カメラ読取に必要です。キーはこの端末にのみ保存されます。</p>
+        <input type="text" id="apikey-input" placeholder="AIzaSy..." class="apikey-input">
+        <button id="save-apikey-btn" class="btn-primary" style="width:100%;margin-top:8px;">保存</button>
+      </div>
+
+      <div class="settings-section">
+        <h3>APIキーの取得方法</h3>
+        <ol class="settings-steps">
+          <li>Google Cloud Console を開く</li>
+          <li>プロジェクトを作成</li>
+          <li>Cloud Vision API を有効化</li>
+          <li>認証情報 → APIキーを作成</li>
+        </ol>
+        <p class="settings-desc">月1000回まで無料で使えます。</p>
+      </div>
     </div>
   </div>
 
