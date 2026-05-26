@@ -1,0 +1,17 @@
+{
+  "name": "JANバーコード変換",
+  "short_name": "JANバーコード",
+  "description": "JANコードをスキャン可能なバーコード画像に変換",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f8f9fa",
+  "theme_color": "#2563eb",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%232563eb' width='192' height='192' rx='40'/><text x='96' y='115' font-size='70' font-weight='bold' text-anchor='middle' fill='white' font-family='sans-serif'>JAN</text></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    }
+  ]
+}

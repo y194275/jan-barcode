@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="JANバーコード">
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%23333' width='100' height='100' rx='20'/><text x='50' y='65' font-size='50' text-anchor='middle' fill='white'>JAN</text></svg>">
+  <link rel="manifest" href="manifest.json">
+  <title>JANバーコード変換</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- ホーム画面 -->
+  <div id="home-view" class="view active">
+    <header>
+      <h1>JANバーコード変換</h1>
+    </header>
+
+    <div class="input-section">
+      <label class="camera-btn" for="camera-input">
+        <svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor">
+          <path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/>
+          <path d="M9 2 7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/>
+        </svg>
+        <span>カメラでJANコード読取</span>
+        <small>印刷された数字をOCRで認識</small>
+        <input type="file" id="camera-input" accept="image/*" capture="environment">
+      </label>
+
+      <div class="manual-input-area">
+        <div class="manual-input-row">
+          <input type="tel" id="manual-jan" placeholder="JANコード（13桁）" maxlength="13" inputmode="numeric" pattern="[0-9]*">
+          <button id="add-btn" class="btn-primary">追加</button>
+        </div>
+        <div class="bulk-toggle">
+          <button id="bulk-toggle-btn" class="btn-text">まとめて入力</button>
+        </div>
+        <div id="bulk-input-area" class="hidden">
+          <textarea id="bulk-jan" rows="5" placeholder="複数のJANコードを改行区切りで入力&#10;4906064275414&#10;4971860003634&#10;4974019172835"></textarea>
+          <button id="bulk-add-btn" class="btn-primary">一括追加</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="code-list" class="code-list">
+      <!-- バーコードリストがここに表示される -->
+    </div>
+
+    <div id="empty-state" class="empty-state">
+      <p>JANコードを入力するか<br>カメラで読み取ってください</p>
+    </div>
+
+    <div id="list-actions" class="list-actions hidden">
+      <button id="clear-all-btn" class="btn-danger">すべて削除</button>
+    </div>
+  </div>
+
+  <!-- OCR処理画面 -->
+  <div id="ocr-view" class="view">
+    <header>
+      <button class="back-btn" data-target="home-view">&larr; 戻る</button>
+      <h2>OCR読取結果</h2>
+    </header>
+
+    <div id="ocr-preview">
+      <img id="ocr-image" alt="撮影画像">
+    </div>
+
+    <div id="ocr-status" class="ocr-status">
+      <div class="spinner"></div>
+      <p>画像を解析中...</p>
+    </div>
+
+    <div id="ocr-results" class="ocr-results hidden">
+      <h3>検出されたJANコード</h3>
+      <div id="ocr-codes"></div>
+      <div class="ocr-actions">
+        <button id="ocr-add-all" class="btn-primary">すべて追加</button>
+        <button id="ocr-retry" class="btn-secondary">再撮影</button>
+      </div>
+    </div>
+
+    <div id="ocr-no-results" class="hidden">
+      <p>JANコードが検出できませんでした</p>
+      <p class="hint">用紙をまっすぐ撮影し、数字がはっきり見えるようにしてください</p>
+      <button id="ocr-retry2" class="btn-secondary">再撮影</button>
+    </div>
+  </div>
+
+  <!-- バーコード拡大表示 -->
+  <div id="detail-view" class="view">
+    <header>
+      <button class="back-btn" data-target="home-view">&larr; 一覧へ</button>
+      <h2 id="detail-title">バーコード</h2>
+    </header>
+
+    <div class="detail-content">
+      <div id="detail-barcode" class="detail-barcode"></div>
+      <p id="detail-jan" class="detail-jan"></p>
+      <p id="detail-name" class="detail-name"></p>
+      <div class="detail-nav">
+        <button id="prev-btn" class="btn-nav">&larr; 前</button>
+        <span id="detail-counter"></span>
+        <button id="next-btn" class="btn-nav">次 &rarr;</button>
+      </div>
+    </div>
+
+    <div class="scan-hint">
+      <p>画面をスキャナーに向けてください</p>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+  <script src="app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js');
+    }
+  </script>
+</body>
+</html>
